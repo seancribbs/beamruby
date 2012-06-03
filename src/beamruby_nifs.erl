@@ -2,7 +2,7 @@
 
 -on_load(init/0).
 
--export([new/0, eval/2, debug/2]).
+-export([new/0, eval/2, require/2]).
 
 -define(nif_stub, nif_stub_error(?LINE)).
 nif_stub_error(Line) ->
@@ -29,7 +29,7 @@ new() ->
 eval(_VM, _String) ->
     ?nif_stub.
 
-debug(_VM, _Flag) ->
+require(_VM, _File) ->
     ?nif_stub.
 %% ===================================================================
 %% EUnit tests
