@@ -194,4 +194,4 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
   return 0;
 }
 
-ERL_NIF_INIT(beamruby_nifs, nif_funcs, &on_load, NULL, NULL, NULL);
+ERL_NIF_INIT(beamruby, nif_funcs, &on_load, NULL, NULL, NULL);
