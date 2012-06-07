@@ -9,63 +9,67 @@
 #include "mruby/compile.h"
 #include "mruby/proc.h"
 #include "mruby/string.h"
-/* #include "beamruby_conv.h" */
+#include "mruby/class.h"
+#include "beamruby.h"
+#include "beamruby_conv.h"
 
 #define NIF_FUNC(name) static ERL_NIF_TERM name(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
-static ErlNifResourceType* beamruby_nifs_RESOURCE = NULL;
+static ErlNifResourceType* beamruby_RESOURCE = NULL;
 static ERL_NIF_TERM ATOM_OK;
 static ERL_NIF_TERM ATOM_ERROR;
 static ERL_NIF_TERM ATOM_TRUE;
+static ERL_NIF_TERM ATOM_FALSE;
+static ERL_NIF_TERM ATOM_UNDEFINED;
 static ERL_NIF_TERM ATOM_RUBY_EXCEPTION;
 static ERL_NIF_TERM ATOM_CODEGEN_ERROR;
 static ERL_NIF_TERM ATOM_PARSE_ERROR;
-static ERL_NIF_TERM ATOM_RHASH;
-
-typedef struct
-{
-  mrb_state *mrb;
-  /* uint8_t debug; */
-} beamruby_nifs_handle;
+static ERL_NIF_TERM ATOM_STRUCT;
+static ERL_NIF_TERM ATOM_RANGE;
 
 // Prototypes
-NIF_FUNC(beamruby_nifs_new);
-NIF_FUNC(beamruby_nifs_eval);
-NIF_FUNC(beamruby_nifs_require);
+NIF_FUNC(beamruby_new);
+NIF_FUNC(beamruby_eval);
+NIF_FUNC(beamruby_require);
 
 static void* beamruby_allocf(mrb_state* mrb, void* p, size_t size);
 ERL_NIF_TERM beamruby_run(ErlNifEnv*, mrb_state*, struct mrb_parser_state*);
 
 // NIFs table
 static ErlNifFunc nif_funcs[] = {
-  {"new",     0, beamruby_nifs_new},
-  {"eval",    2, beamruby_nifs_eval},
-  /* {"debug",   2, beamruby_nifs_debug}, */
-  {"require", 2, beamruby_nifs_require}
+  {"new",     0, beamruby_new},
+  {"eval",    2, beamruby_eval},
+  {"require", 2, beamruby_require}
 };
 
 // NIFs
-NIF_FUNC(beamruby_nifs_new)
+NIF_FUNC(beamruby_new)
 {
-  beamruby_nifs_handle* handle = enif_alloc_resource(beamruby_nifs_RESOURCE,
-                                                     sizeof(beamruby_nifs_handle));
+  beamruby_handle* handle = enif_alloc_resource(beamruby_RESOURCE,
+                                                     sizeof(beamruby_handle));
+  struct RClass *mErlang, *cArray;
+  // Open the MRuby VM, use the NIF allocator
   handle->mrb = mrb_open_allocf(beamruby_allocf);
-  /* handle->debug = FALSE; */
+  
+  // Define our module and tuple class
+  mErlang = mrb_define_module_id(handle->mrb, mrb_intern(handle->mrb, "Erlang"));
+  cArray = handle->mrb->array_class;
+  handle->cTuple = mrb_define_class_under(handle->mrb, mErlang, "Tuple", cArray);
 
   ERL_NIF_TERM result = enif_make_resource(env, handle);
   enif_release_resource(handle);
   return enif_make_tuple2(env, ATOM_OK, result);
 }
 
-NIF_FUNC(beamruby_nifs_eval)
+NIF_FUNC(beamruby_eval)
 {
-  beamruby_nifs_handle* handle;
+  beamruby_handle* handle;
   struct mrb_parser_state *p;
   mrb_state *mrb;
   char *code;
   unsigned codelen;
 
-  if (enif_get_resource(env, argv[0], beamruby_nifs_RESOURCE, (void**)&handle) &&
+  if (enif_get_resource(env, argv[0], beamruby_RESOURCE, (void**)&handle) &&
       enif_is_list(env, argv[1])) {
     enif_get_list_length(env, argv[1], (unsigned*)&codelen);
     if(!enif_get_string(env, argv[1], (char*)&code, codelen+1, ERL_NIF_LATIN1))
@@ -82,31 +86,11 @@ NIF_FUNC(beamruby_nifs_eval)
   }
 }
 
-/* NIF_FUNC(beamruby_nifs_debug) */
-/* { */
-/*   beamruby_nifs_handle* handle; */
-/*   if(enif_get_resource(env, argv[0], beamruby_nifs_RESOURCE, (void**)&handle) && */
-/*      enif_is_atom(env, argv[1])) */
-/*     { */
-/*       if(argv[1] == ATOM_TRUE) { */
-/*         handle->debug = TRUE; */
-/*       } */
-/*       else { */
-/*         handle->debug = FALSE; */
-/*       } */
-/*       return ATOM_OK; */
-/*     } */
-/*   else */
-/*     { */
-/*       return enif_make_badarg(env); */
-/*     } */
-/* } */
-
-NIF_FUNC(beamruby_nifs_require)
+NIF_FUNC(beamruby_require)
 {
-  beamruby_nifs_handle* handle;
+  beamruby_handle* handle;
   char filename[4096];
-  if (enif_get_resource(env, argv[0], beamruby_nifs_RESOURCE, (void**)&handle) &&
+  if (enif_get_resource(env, argv[0], beamruby_RESOURCE, (void**)&handle) &&
       enif_get_string(env, argv[1], (char*)&filename, sizeof(filename), ERL_NIF_LATIN1)) {
     // Open file
     FILE *file = fopen(filename, "r");
@@ -123,9 +107,9 @@ NIF_FUNC(beamruby_nifs_require)
 }
 
 // resource cleanup
-static void beamruby_nifs_resource_cleanup(ErlNifEnv* env, void* arg)
+static void beamruby_resource_cleanup(ErlNifEnv* env, void* arg)
 {
-  beamruby_nifs_handle* handle = (beamruby_nifs_handle*)arg;
+  beamruby_handle* handle = (beamruby_handle*)arg;
   mrb_close(handle->mrb);
 }
 
@@ -175,22 +159,25 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 {
   ErlNifResourceFlags flags = ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER;
   ErlNifResourceType* rt = enif_open_resource_type(env, NULL,
-                                                   "beamruby_nifs_resource",
-                                                   &beamruby_nifs_resource_cleanup,
+                                                   "beamruby_resource",
+                                                   &beamruby_resource_cleanup,
                                                    flags, NULL);
 
   if (rt == NULL)
     return -1;
 
-  beamruby_nifs_RESOURCE = rt;
+  beamruby_RESOURCE = rt;
 
   ATOM_OK = enif_make_atom(env, "ok");
   ATOM_ERROR = enif_make_atom(env, "error");
   ATOM_TRUE = enif_make_atom(env, "true");
+  ATOM_FALSE = enif_make_atom(env, "false");
+  ATOM_UNDEFINED = enif_make_atom(env, "undefined");
   ATOM_RUBY_EXCEPTION = enif_make_atom(env, "ruby_exception");
   ATOM_PARSE_ERROR = enif_make_atom(env, "parse_error");
   ATOM_CODEGEN_ERROR = enif_make_atom(env, "codegen_error");
-  ATOM_RHASH = enif_make_atom(env, "rhash");
+  ATOM_STRUCT = enif_make_atom(env, "struct");
+  ATOM_RANGE = enif_make_atom(env, "range");
   return 0;
 }
 
