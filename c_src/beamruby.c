@@ -6,6 +6,7 @@
 #include "erl_driver.h"
 
 #include "mruby.h"
+#include "mruby/array.h"
 #include "mruby/compile.h"
 #include "mruby/proc.h"
 #include "mruby/string.h"
@@ -16,16 +17,6 @@
 #define NIF_FUNC(name) static ERL_NIF_TERM name(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 static ErlNifResourceType* beamruby_RESOURCE = NULL;
-static ERL_NIF_TERM ATOM_OK;
-static ERL_NIF_TERM ATOM_ERROR;
-static ERL_NIF_TERM ATOM_TRUE;
-static ERL_NIF_TERM ATOM_FALSE;
-static ERL_NIF_TERM ATOM_UNDEFINED;
-static ERL_NIF_TERM ATOM_RUBY_EXCEPTION;
-static ERL_NIF_TERM ATOM_CODEGEN_ERROR;
-static ERL_NIF_TERM ATOM_PARSE_ERROR;
-static ERL_NIF_TERM ATOM_STRUCT;
-static ERL_NIF_TERM ATOM_RANGE;
 
 // Prototypes
 NIF_FUNC(beamruby_new);
@@ -50,7 +41,9 @@ NIF_FUNC(beamruby_new)
   struct RClass *mErlang, *cArray;
   // Open the MRuby VM, use the NIF allocator
   handle->mrb = mrb_open_allocf(beamruby_allocf);
-  
+  // Make a new compiler context
+  handle->mrbc = mrbc_context_new(handle->mrb);
+
   // Define our module and tuple class
   mErlang = mrb_define_module_id(handle->mrb, mrb_intern(handle->mrb, "Erlang"));
   cArray = handle->mrb->array_class;
@@ -65,7 +58,6 @@ NIF_FUNC(beamruby_eval)
 {
   beamruby_handle* handle;
   struct mrb_parser_state *p;
-  mrb_state *mrb;
   char *code;
   unsigned codelen;
 
@@ -75,11 +67,9 @@ NIF_FUNC(beamruby_eval)
     if(!enif_get_string(env, argv[1], (char*)&code, codelen+1, ERL_NIF_LATIN1))
       return enif_make_badarg(env);
 
-    mrb = handle->mrb;
-
     // Parse
-    p = mrb_parse_string(mrb, (char*)&code);
-    return beamruby_run(env, mrb, p);
+    p = mrb_parse_string(handle->mrb, (char*)&code, handle->mrbc);
+    return beamruby_run(env, handle->mrb, p);
   }
   else  {
     return enif_make_badarg(env);
@@ -96,7 +86,7 @@ NIF_FUNC(beamruby_require)
     FILE *file = fopen(filename, "r");
     if(file != NULL) {
       // Parse file
-      struct mrb_parser_state* p = mrb_parse_file(handle->mrb, file);
+      struct mrb_parser_state* p = mrb_parse_file(handle->mrb, file, handle->mrbc);
       return beamruby_run(env, handle->mrb, p);
     } else {
       return enif_make_tuple2(env, ATOM_ERROR, enif_make_atom(env, erl_errno_id(errno)));

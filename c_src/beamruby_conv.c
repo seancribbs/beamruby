@@ -34,7 +34,8 @@ mrb_hash_ht_hash_equal(mrb_state *mrb, mrb_value a, mrb_value b)
   return mrb_eql(mrb, a, b);
 }
 
-KHASH_INIT(ht, mrb_value, mrb_value, 1, mrb_hash_ht_hash_func, mrb_hash_ht_hash_equal);
+KHASH_DECLARE(ht, mrb_value, mrb_value, 1);
+KHASH_DEFINE(ht, mrb_value, mrb_value, 1, mrb_hash_ht_hash_func, mrb_hash_ht_hash_equal);
 
 mrb_value number_to_numeric(ErlNifEnv* env, ERL_NIF_TERM term, beamruby_handle *handle);
 mrb_value atom_to_symbol(ErlNifEnv* env, ERL_NIF_TERM term, beamruby_handle *handle);
@@ -52,11 +53,11 @@ RUBY_TO_ERL(hash_to_plist_struct);
 RUBY_TO_ERL(string_to_binary);
 RUBY_TO_ERL(range_to_record);
 
-extern ERL_NIF_TERM ATOM_STRUCT;
-extern ERL_NIF_TERM ATOM_TRUE;
-extern ERL_NIF_TERM ATOM_FALSE;
-extern ERL_NIF_TERM ATOM_UNDEFINED;
-extern ERL_NIF_TERM ATOM_RANGE;
+/* extern ERL_NIF_TERM ATOM_STRUCT; */
+/* extern ERL_NIF_TERM ATOM_TRUE; */
+/* extern ERL_NIF_TERM ATOM_FALSE; */
+/* extern ERL_NIF_TERM ATOM_UNDEFINED; */
+/* extern ERL_NIF_TERM ATOM_RANGE; */
 
 mrb_value beamruby_to_rb(ErlNifEnv* env, ERL_NIF_TERM term, beamruby_handle *handle){
   mrb_state *mrb = handle->mrb;
@@ -85,12 +86,12 @@ mrb_value beamruby_to_rb(ErlNifEnv* env, ERL_NIF_TERM term, beamruby_handle *han
     if(size == 2 && elements[0] == ATOM_STRUCT) { // mochijson style struct
       return plist_to_hash(env, elements[1], handle);
     }
-    else if(size == 1 && enif_is_list(env, elements[0])) { // CouchDB/EEP8 style
+    else if(size == 1 && enif_is_list(env, elements[0])) { // CouchDB/EEP18 style
       return plist_to_hash(env, elements[0], handle);
     }
     else if(size == 4 && elements[0] == ATOM_RANGE) { // "range" record from beamruby.hrl
       int excl = (elements[3] == ATOM_TRUE) ? 0 : 1;
-      return mrb_range_new(mrb, 
+      return mrb_range_new(mrb,
                            beamruby_to_rb(env, elements[1], handle),
                            beamruby_to_rb(env, elements[2], handle),
                            excl);
@@ -133,7 +134,7 @@ ERL_NIF_TERM beamruby_to_erl(ErlNifEnv* env, mrb_value obj, beamruby_handle *han
   case MRB_TT_RANGE:
     return range_to_record(env, obj, handle); break;
   /* TODO: add ability to bind Erlang tuples to Ruby struct types and auto-marshal */
-  /* case MRB_TT_STRUCT: */    
+  /* case MRB_TT_STRUCT: */
   default:
     return ATOM_UNDEFINED;
   }
@@ -256,7 +257,7 @@ RUBY_TO_ERL(fixnum_to_number) {
 
 RUBY_TO_ERL(symbol_to_atom) {
   mrb_state *mrb = handle->mrb;
-  int len;  
+  int len;
   const char *name = mrb_sym2name_len(mrb, mrb_symbol(obj), (int*)&len);
   return enif_make_atom_len(env, name, (size_t)len);
 }
@@ -301,7 +302,7 @@ RUBY_TO_ERL(hash_to_plist_struct){
   mrb_value key, value;
   struct kh_ht *hash = mrb_hash_tbl(mrb, obj);
   khiter_t k;
-  
+
   if(!hash) {
     return enif_make_tuple2(env, ATOM_STRUCT, enif_make_list(env, 0));
   }
@@ -326,7 +327,7 @@ RUBY_TO_ERL(string_to_binary){
   if(enif_alloc_binary(size, (ErlNifBinary*)&bin)){
     strncpy((char*)bin.data, (char*)RSTRING_PTR(obj), size);
     return enif_make_binary(env, (ErlNifBinary*)&bin);
-  } 
+  }
   else {
     return ATOM_UNDEFINED;
   }

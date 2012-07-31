@@ -1,6 +1,7 @@
 #ifndef BEAMRUBY_CONV_H
 #define BEAMRUBY_CONV_H
 
+#include "mruby/compile.h"
 #include "beamruby.h"
 
 #define RUBY_TO_ERL(name) ERL_NIF_TERM name(ErlNifEnv* env, mrb_value obj, beamruby_handle *handle)
